@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+
+import numpy as np
+import rospy
+from std_msgs.msg import Float64
+from sensor_msgs.msg import JointState
+from simple_arm.srv import *
+
+class SafeMove():
+    """ Node for safe move service
+    """
+    def __init__(self):
+        rospy.init_node('arm_mover')
+
+        self.pub_joint_1 = rospy.Publisher(
+            '/simple_arm/joint_1_position_controller/command',
+            Float64,
+            queue_size = 10
+        )
+        self.pub_joint_2 = rospy.Publisher(
+            '/simple_arm/joint_2_position_controller/command',
+            Float64,
+            queue_size = 10
+        )
+        self.srv_safe_move = rospy.Service(
+            '~safe_move',
+            GoToConfiguration,
+            self._handle_safe_move_request
+        )
+
+        rospy.spin()
+
+    def _clamp_configuration(self, joint_1, joint_2):
+        """ Clamp configuration according to specified bounds
+        """
+        # revolute joint 1:
+        min_joint_1 = rospy.get_param('~min_joint_1_angle', 0)
+        max_joint_1 = rospy.get_param('~max_joint_1_angle', 2*np.pi)
+
+        clamped_joint_1 = joint_1
+        if not (min_joint_1 <= clamped_joint_1 <= max_joint_1):
+            clamped_joint_1 = min(max(clamped_joint_1, min_joint_1), max_joint_1)
+            rospy.logwarn(
+                "Revolute joint 1 is out of bounds, valid range[%s, %s], clamped to %s",
+                min_joint_1, max_joint_1, clamped_joint_1
+            )
+
+        # revolute joint 2:
+        min_joint_2 = rospy.get_param('~min_joint_2_angle', 0)
+        max_joint_2 = rospy.get_param('~max_joint_2_angle', 2*np.pi)
+
+        clamped_joint_2 = joint_2
+        if not (min_joint_2 <= clamped_joint_2 <= max_joint_2):
+            clamped_joint_2 = min(max(clamped_joint_2, min_joint_2), max_joint_2)
+            rospy.logwarn(
+                "Revolute joint 2 is out of bounds, valid range [%s, %s], clamped to %s",
+                min_joint_2, max_joint_2, clamped_joint_2
+            )
+
+        return (clamped_joint_1, clamped_joint_2)
+
+    def _is_at_configuration(
+        self,
+        required_joint_1, actual_joint_1,
+        required_joint_2, actual_joint_2
+    ):
+        """ Whether the arm has reached specified configuration
+        """
+        tol = 25e-2
+
+        dist = np.linalg.norm(
+            np.array([required_joint_1, required_joint_2]) - np.array([actual_joint_1, actual_joint_2])
+        )
+
+        return dist <= tol
+
+    def _move_arm(self, joint_1, joint_2):
+        """ Move arm to specified configuration
+        """
+        # clamp required configuration:
+        required_joint_1, required_joint_2 = self._clamp_configuration(
+            joint_1,
+            joint_2
+        )
+
+        # publish actuation command:
+        time_start = rospy.Time.now()
+        self.pub_joint_1.publish(required_joint_1)
+        self.pub_joint_2.publish(required_joint_2)
+
+        # wait for transition:
+        while True:
+            joint_state = rospy.wait_for_message('/simple_arm/joint_states', JointState)
+
+            (actual_joint_1, actual_joint_2) = (
+                joint_state.position[0],
+                joint_state.position[1]
+            )
+
+            if self._is_at_configuration(
+                required_joint_1, actual_joint_1,
+                required_joint_2, actual_joint_2
+            ):
+                time_elapsed = rospy.Time.now() - time_start
+                return time_elapsed
+
+    def _handle_safe_move_request(self, req):
+        """ Handle safe move request
+        """
+        rospy.loginfo(
+            "GoToConfiguration Request Received -- Joint 1 %s, Joint 2 %s",
+            req.joint_1,
+            req.joint_2
+        )
+
+        time_elapsed = self._move_arm(
+            req.joint_1,
+            req.joint_2
+        )
+
+        return GoToConfigurationResponse(time_elapsed)
+
+if __name__ == '__main__':
+    try:
+        SafeMove()
+    except rospy.ROSInterruptException:
+        pass

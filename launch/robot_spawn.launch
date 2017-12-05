@@ -13,8 +13,28 @@
     <arg name="debug" value="false"/>
   </include>
 
-  <!--spawn a robot in gazebo world-->
+  <!--Spawn a robot in gazebo world-->
   <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
   args="-urdf -param robot_description -x 0 -y 0 -z 0 -R 0 -P 0 -Y 0 -model simple_arm"/>
+
+  <!--Launch simple move node
+  <node name="simple_mover" type="simple_mover" pkg="simple_arm">
+  </node>
+  -->
+
+  <!--Launch safe move service-->
+  <node name="arm_mover" type="arm_mover" pkg="simple_arm">
+    <rosparam>
+      min_joint_1_angle: 0
+      max_joint_1_angle: 1.57
+      min_joint_2_angle: 0
+      max_joint_2_angle: 1.57
+    </rosparam>
+  </node>
+
+
+  <!--Launch look away node-->
+  <node name="look_away" type="look_away" pkg="simple_arm">
+  </node>
 
 </launch>

@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+
+# set up session:
+import numpy as np
+
+import rospy
+from sensor_msgs.msg import JointState, Image
+from simple_arm.srv import *
+
+class LookAway():
+    """ Node for looking away from uniform image
+    """
+    def __init__(self):
+        rospy.init_node('look_away')
+
+        self.sub_image_raw = rospy.Subscriber(
+            '/rgb_camera/image_raw',
+            Image,
+            self._handle_image_raw_msg
+        )
+        self.sub_joint_state = rospy.Subscriber(
+            '/simple_arm/joint_states',
+            JointState,
+            self._handle_joint_state_msg
+        )
+
+        self.srv_safe_move = rospy.ServiceProxy(
+            '/arm_mover/safe_move',
+            GoToConfiguration
+        )
+
+        self.is_moving = False
+        self.last_configuration = None
+
+        rospy.spin()
+
+    def _is_uniform_image(self, image):
+        """ Whether input image is uniform
+        """
+        return all(pixel == image[0] for pixel in image)
+
+    def _handle_image_raw_msg(self, data):
+        """ Handle end effector raw image
+        """
+        if (self._is_uniform_image(data.data)) and (not self.is_moving):
+            try:
+                rospy.wait_for_service('/arm_mover/safe_move')
+
+                msg = GoToConfigurationRequest()
+                msg.joint_1 = np.pi/2
+                msg.joint_2 = np.pi/2
+
+                time_elapsed = self.srv_safe_move(msg)
+
+                rospy.logwarn(
+                    "Uniform image detected in end effector camera. Time taken to look something interesting: %s",
+                    time_elapsed
+                )
+
+            except rospy.ServiceException, e:
+                rospy.logerror(
+                    "/arm_mover/safe_move Service call failed: %s",
+                    e
+                )
+
+    def _is_at_configuration(self, configuration_x, configuration_y):
+        """ Whether robot arm is moving
+        """
+        if (configuration_x is None) or (configuration_y is None):
+            return False
+        else:
+            tol = 1e-2
+
+            dist = np.linalg.norm(
+                np.array(
+                    [configuration_x[0], configuration_x[1]]
+                ) - np.array(
+                    [configuration_y[0], configuration_y[1]]
+                )
+            )
+
+            return dist <= tol
+
+    def _handle_joint_state_msg(self, data):
+        """ Handle joint state configuration message
+        """
+        if self._is_at_configuration(data.position, self.last_configuration):
+            self.is_moving = False
+        else:
+            self.last_configuration = data.position
+            self.is_moving = True
+
+if __name__ == '__main__':
+    try:
+        LookAway()
+    except rospy.ROSInterruptException:
+        pass

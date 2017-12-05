@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+
+import numpy as np
+import rospy
+from std_msgs.msg import Float64
+
+class SimpleMove():
+    """ ROS node for simple arm move
+    """
+    def __init__(self, PUB_RATE = 10):
+        rospy.init_node('simple_mover')
+
+        self.rate = rospy.Rate(PUB_RATE)
+
+        # joint angle publishers:
+        self.pub_joint_1 = rospy.Publisher(
+            '/simple_arm/joint_1_position_controller/command',
+            Float64,
+            queue_size = 10
+        )
+        self.pub_joint_2 = rospy.Publisher(
+            '/simple_arm/joint_2_position_controller/command',
+            Float64,
+            queue_size = 10
+        )
+
+        # record launch time:
+        self.launch_time = 0
+        while self.launch_time == 0:
+            self.launch_time = rospy.Time.now().to_sec()
+
+        # node loop:
+        while not rospy.is_shutdown():
+            time_elapsed = rospy.Time.now().to_sec() - self.launch_time
+
+            self.pub_joint_1.publish(
+              (np.pi/2)*np.sin(2*np.pi/PUB_RATE*time_elapsed)
+            )
+            self.pub_joint_2.publish(
+              (np.pi/2)*np.sin(2*np.pi/PUB_RATE*time_elapsed)
+            )
+
+            self.rate.sleep()
+
+if __name__ == '__main__':
+  try:
+    SimpleMove()
+  except rospy.ROSInterruptException:
+    pass
