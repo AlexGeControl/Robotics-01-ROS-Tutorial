@@ -1,4 +1,3 @@
-# simple_arm_01
-A mini-project for RoboND's ROS Basics Module, Lesson 02.
+# ROS Tutorial
 
-```
+General ROS tutorial including pub-sub nodes, services and parameter service in both Python and C++.
